@@ -31,26 +31,35 @@ export default function UrlInput({ onDone }: Props) {
       })
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const lines = decoder.decode(value).split('\n')
+        buffer += decoder.decode(value)
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
-          const data = JSON.parse(line.slice(6))
+          let data: { type: string; message?: string; chunks?: number }
+          try {
+            data = JSON.parse(line.slice(6))
+          } catch {
+            continue
+          }
           if (data.type === 'progress') {
-            setStatus(data.message)
+            setStatus(data.message ?? '')
           } else if (data.type === 'done') {
             setStatus(`Indexed ${data.chunks} chunks — ready!`)
             setTimeout(() => onDone(), 800)
           } else if (data.type === 'error') {
-            setError(data.message)
+            setError(data.message ?? 'Unknown error')
             setLoading(false)
             setStatus(null)
           }
         }
       }
+      setLoading(false)
     } catch {
       setError('Network error. Is the backend running on port 8000?')
       setLoading(false)
