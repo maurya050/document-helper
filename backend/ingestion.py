@@ -25,6 +25,8 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 
+INDEX_NAME = "langchain-docs-2026"
+
 embeddings = OpenAIEmbeddings(
     model="text-embedding-3-small",
     show_progress_bar=False,
@@ -33,14 +35,11 @@ embeddings = OpenAIEmbeddings(
 )
 # vectorstore = Chroma(persist_directory="chroma_db", embedding_function=embeddings)
 vectorstore = PineconeVectorStore(
-    index_name="langchain-docs-2026", embedding=embeddings
+    index_name=INDEX_NAME, embedding=embeddings
 )
 tavily_extract = TavilyExtract()
 tavily_map = TavilyMap(max_depth=5, max_breadth=20, max_pages=1000)
 tavily_crawl = TavilyCrawl()
-
-
-INDEX_NAME = "langchain-docs-2026"
 
 
 async def ingest(url: str) -> AsyncIterator[dict]:
@@ -72,8 +71,12 @@ async def ingest(url: str) -> AsyncIterator[dict]:
     batch_size = 50
     batches = [splitted_docs[i : i + batch_size] for i in range(0, len(splitted_docs), batch_size)]
     for i, batch in enumerate(batches):
-        await vectorstore.aadd_documents(batch)
-        yield {"type": "progress", "message": f"Indexed batch {i + 1}/{len(batches)}"}
+        try:
+            await vectorstore.aadd_documents(batch)
+            yield {"type": "progress", "message": f"Indexed batch {i + 1}/{len(batches)}"}
+        except Exception as e:
+            yield {"type": "error", "message": f"Batch {i + 1} failed: {e}"}
+            return
 
     yield {"type": "done", "chunks": len(splitted_docs)}
 
