@@ -1,4 +1,5 @@
 import os
+from collections.abc import AsyncIterator
 from typing import Any, Dict
 
 from dotenv import load_dotenv
@@ -83,6 +84,41 @@ def run_llm(query: str) -> Dict[str, Any]:
         "answer": answer,
         "context": context_docs
     }
+
+async def run_llm_stream(query: str) -> AsyncIterator[dict]:
+    """Stream RAG response. Yields token, sources, and done dicts."""
+    system_prompt = (
+        "You are a helpful AI assistant that answers questions about LangChain documentation. "
+        "You have access to a tool that retrieves relevant documentation. "
+        "Use the tool to find relevant information before answering questions. "
+        "Always cite the sources you use in your answers. "
+        "If you cannot find the answer in the retrieved documentation, say so."
+    )
+    agent = create_agent(model, tools=[retrieve_context], system_prompt=system_prompt)
+    sources: list[str] = []
+
+    async for event in agent.astream_events(
+        {"messages": [{"role": "user", "content": query}]},
+        version="v2",
+    ):
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if hasattr(chunk, "content") and chunk.content:
+                yield {"type": "token", "content": chunk.content}
+
+        elif event["event"] == "on_tool_end" and event.get("name") == "retrieve_context":
+            output = event["data"].get("output")
+            if hasattr(output, "artifact") and isinstance(output.artifact, list):
+                sources = [
+                    doc.metadata.get("source", "")
+                    for doc in output.artifact
+                    if doc.metadata.get("source")
+                ]
+
+    if sources:
+        yield {"type": "sources", "sources": sources}
+    yield {"type": "done"}
+
 
 if __name__ == '__main__':
     result = run_llm(query="what are deep agents?")
