@@ -161,3 +161,11 @@ cython_debug/
 langchain-docs/
 .DS_Store
 .chroma_db/
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
+# Brainstorm artifacts
+.superpowers/
