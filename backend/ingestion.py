@@ -46,7 +46,11 @@ async def ingest(url: str) -> AsyncIterator[dict]:
     """Wipe Pinecone index, crawl url, re-index. Yields progress dicts."""
     yield {"type": "progress", "message": "Clearing previous index..."}
     pc = PineconeClient(api_key=os.getenv("PINECONE_API_KEY"))
-    await asyncio.to_thread(lambda: pc.Index(INDEX_NAME).delete(delete_all=True))
+    try:
+        await asyncio.to_thread(lambda: pc.Index(INDEX_NAME).delete(delete_all=True))
+    except Exception as e:
+        if "Namespace not found" not in str(e) and "404" not in str(e):
+            raise
 
     yield {"type": "progress", "message": f"Crawling {url} — this may take a few minutes"}
     res = await asyncio.to_thread(
@@ -61,6 +65,7 @@ async def ingest(url: str) -> AsyncIterator[dict]:
     all_docs = [
         Document(page_content=r["raw_content"], metadata={"source": r["url"]})
         for r in res["results"]
+        if r.get("raw_content")
     ]
     yield {"type": "progress", "message": f"Crawled {len(all_docs)} pages"}
 
