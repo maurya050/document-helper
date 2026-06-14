@@ -1,4 +1,5 @@
 import json
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,14 +9,24 @@ from pydantic import BaseModel
 from .core import run_llm_stream
 from .ingestion import ingest
 
-app = FastAPI()
+app = FastAPI(title="Document Helper API")
+
+# Allow localhost in dev + production frontend URL via env var
+_origins = ["http://localhost:3000", "http://localhost:8501"]
+if frontend_url := os.getenv("FRONTEND_URL"):
+    _origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 class IngestRequest(BaseModel):
