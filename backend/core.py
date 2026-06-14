@@ -12,22 +12,40 @@ from langchain_openai import OpenAIEmbeddings
 
 load_dotenv()
 
-# Initialize embeddings (same as ingestion.py)
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+# Lazy singletons — initialized on first use so the app starts without credentials
+_embeddings = None
+_vectorstore = None
+_model = None
 
-#Initialize vector store
-vectorstore = PineconeVectorStore(
-    index_name="langchain-docs-2026", embedding=embeddings
-)
-# Initialize chat model
-model = init_chat_model("gpt-5.2", model_provider="openai")
+
+def _get_embeddings():
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    return _embeddings
+
+
+def _get_vectorstore():
+    global _vectorstore
+    if _vectorstore is None:
+        _vectorstore = PineconeVectorStore(
+            index_name="langchain-docs-2026", embedding=_get_embeddings()
+        )
+    return _vectorstore
+
+
+def _get_model():
+    global _model
+    if _model is None:
+        _model = init_chat_model("gpt-5.2", model_provider="openai")
+    return _model
 
 
 @tool(response_format="content_and_artifact")
 def retrieve_context(query: str):
     """Retrieve relevant documentation to help answer user queries about LangChain."""
     # Retrieve top 4 most similar documents
-    retrieved_docs = vectorstore.as_retriever().invoke(query, k=4)
+    retrieved_docs = _get_vectorstore().as_retriever().invoke(query, k=4)
     
     # Serialize documents for the model
     serialized = "\n\n".join(
@@ -60,8 +78,8 @@ def run_llm(query: str) -> Dict[str, Any]:
         "If you cannot find the answer in the retrieved documentation, say so."
     )
     
-    agent = create_agent(model, tools=[retrieve_context], system_prompt=system_prompt)
-    
+    agent = create_agent(_get_model(), tools=[retrieve_context], system_prompt=system_prompt)
+
     # Build messages list
     messages = [{"role": "user", "content": query}]
     
@@ -94,7 +112,7 @@ async def run_llm_stream(query: str) -> AsyncIterator[dict]:
         "Always cite the sources you use in your answers. "
         "If you cannot find the answer in the retrieved documentation, say so."
     )
-    agent = create_agent(model, tools=[retrieve_context], system_prompt=system_prompt)
+    agent = create_agent(_get_model(), tools=[retrieve_context], system_prompt=system_prompt)
     sources: list[str] = []
 
     async for event in agent.astream_events(

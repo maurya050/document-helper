@@ -24,22 +24,40 @@ ssl_context = ssl.create_default_context(cafile=certifi.where())
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
-
 INDEX_NAME = "langchain-docs-2026"
 
-embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    show_progress_bar=False,
-    chunk_size=50,
-    retry_min_seconds=10,
-)
-# vectorstore = Chroma(persist_directory="chroma_db", embedding_function=embeddings)
-vectorstore = PineconeVectorStore(
-    index_name=INDEX_NAME, embedding=embeddings
-)
-tavily_extract = TavilyExtract()
-tavily_map = TavilyMap(max_depth=5, max_breadth=20, max_pages=1000)
-tavily_crawl = TavilyCrawl()
+# Lazy singletons — instantiated on first use so startup never requires credentials
+_embeddings = None
+_vectorstore = None
+_tavily_crawl = None
+
+
+def _get_embeddings():
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            show_progress_bar=False,
+            chunk_size=50,
+            retry_min_seconds=10,
+        )
+    return _embeddings
+
+
+def _get_vectorstore():
+    global _vectorstore
+    if _vectorstore is None:
+        _vectorstore = PineconeVectorStore(
+            index_name=INDEX_NAME, embedding=_get_embeddings()
+        )
+    return _vectorstore
+
+
+def _get_tavily_crawl():
+    global _tavily_crawl
+    if _tavily_crawl is None:
+        _tavily_crawl = TavilyCrawl()
+    return _tavily_crawl
 
 
 async def ingest(url: str) -> AsyncIterator[dict]:
@@ -54,7 +72,7 @@ async def ingest(url: str) -> AsyncIterator[dict]:
 
     yield {"type": "progress", "message": f"Crawling {url} — this may take a few minutes"}
     res = await asyncio.to_thread(
-        tavily_crawl.invoke,
+        _get_tavily_crawl().invoke,
         {"url": url, "max_depth": 5, "extract_depth": "advanced"},
     )
 
@@ -77,7 +95,7 @@ async def ingest(url: str) -> AsyncIterator[dict]:
     batches = [splitted_docs[i : i + batch_size] for i in range(0, len(splitted_docs), batch_size)]
     for i, batch in enumerate(batches):
         try:
-            await vectorstore.aadd_documents(batch)
+            await _get_vectorstore().aadd_documents(batch)
             yield {"type": "progress", "message": f"Indexed batch {i + 1}/{len(batches)}"}
         except Exception as e:
             yield {"type": "error", "message": f"Batch {i + 1} failed: {e}"}
@@ -106,7 +124,7 @@ async def index_documents_async(documents: List[Document], batch_size: int = 50)
     # Process all batches concurrently
     async def add_batch(batch: List[Document], batch_num: int):
         try:
-            await vectorstore.aadd_documents(batch)
+            await _get_vectorstore().aadd_documents(batch)
             log_success(
                 f"VectorStore Indexing: Successfully added batch {batch_num}/{len(batches)} ({len(batch)} documents)"
             )
