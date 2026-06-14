@@ -1,5 +1,4 @@
 import json
-import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,14 +10,9 @@ from .ingestion import ingest
 
 app = FastAPI(title="Document Helper API")
 
-# Allow localhost in dev + production frontend URL via env var
-_origins = ["http://localhost:3000", "http://localhost:8501"]
-if frontend_url := os.getenv("FRONTEND_URL"):
-    _origins.append(frontend_url)
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
